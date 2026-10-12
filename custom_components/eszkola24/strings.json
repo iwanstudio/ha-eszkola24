@@ -35,7 +35,8 @@
         "title": "eSzkoła24 options",
         "data": {
           "exclude_pattern": "Skip calendar entries matching (e.g. Świetlica)",
-          "scan_interval_hours": "Refresh every N hours"
+          "scan_interval_hours": "Refresh every N hours",
+          "days_off_calendar": "Days-off calendar (lessons on these days are hidden)"
         }
       }
     }

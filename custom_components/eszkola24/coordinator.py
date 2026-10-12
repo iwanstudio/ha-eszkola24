@@ -27,6 +27,7 @@ from .api import (
 from .const import (
     CAL_FUTURE,
     CAL_PAST,
+    CONF_DAYS_OFF,
     CONF_EXCLUDE,
     CONF_SCAN_HOURS,
     DEFAULT_EXCLUDE,
@@ -82,16 +83,58 @@ class ESzkolaCoordinator(DataUpdateCoordinator[dict[str, ChildData]]):
         except re.error:
             return re.compile(re.escape(pattern), re.IGNORECASE)
 
-    def filter_lessons(self, lessons: list[Lesson]) -> list[Lesson]:
+    def filter_lessons(self, lessons: list[Lesson], days_off: set[date] | None = None) -> list[Lesson]:
         rx = self.exclude_regex
-        if rx is None:
-            return lessons
-        return [l for l in lessons if not (rx.search(l.title) or rx.search(l.subject))]
+        days_off = days_off or set()
+        return [
+            l
+            for l in lessons
+            if l.start.date() not in days_off
+            and not (rx and (rx.search(l.title) or rx.search(l.subject)))
+        ]
+
+    async def async_days_off(self, start, end) -> set[date]:
+        """Dni, które mają wpis w wybranym kalendarzu dni wolnych."""
+        entity_id = self.config_entry.options.get(CONF_DAYS_OFF)
+        if not entity_id:
+            return set()
+        if self.hass.states.get(entity_id) is None:
+            _LOGGER.warning("Kalendarz dni wolnych %s nie istnieje", entity_id)
+            return set()
+        try:
+            resp = await self.hass.services.async_call(
+                "calendar",
+                "get_events",
+                {
+                    "entity_id": entity_id,
+                    "start_date_time": dt_util.as_local(start).isoformat(),
+                    "end_date_time": dt_util.as_local(end).isoformat(),
+                },
+                blocking=True,
+                return_response=True,
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Nie udało się odczytać kalendarza dni wolnych: %s", err)
+            return set()
+        days: set[date] = set()
+        for ev in (resp or {}).get(entity_id, {}).get("events", []):
+            ev_start, ev_end = str(ev.get("start", "")), str(ev.get("end", ""))
+            if len(ev_start) == 10:  # wydarzenie całodniowe; koniec wyłączny
+                d0 = date.fromisoformat(ev_start)
+                d1 = date.fromisoformat(ev_end) if len(ev_end) == 10 else d0 + timedelta(days=1)
+            else:
+                d0 = dt_util.as_local(dt_util.parse_datetime(ev_start)).date()
+                last = dt_util.as_local(dt_util.parse_datetime(ev_end) - timedelta(seconds=1)).date()
+                d1 = last + timedelta(days=1)
+            while d0 < d1:
+                days.add(d0)
+                d0 += timedelta(days=1)
+        return days
 
     async def async_fetch_lessons(self, child_id: str, start, end) -> list[Lesson]:
         """Pobranie planu dla dowolnego zakresu (używa kalendarz)."""
         lessons = await self.client.async_get_lessons(child_id, start, end)
-        return self.filter_lessons(lessons)
+        return self.filter_lessons(lessons, await self.async_days_off(start, end))
 
     async def _async_update_data(self) -> dict[str, ChildData]:
         if self._seen is None:

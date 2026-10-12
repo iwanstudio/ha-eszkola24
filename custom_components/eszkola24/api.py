@@ -10,7 +10,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
 from typing import Any
 from urllib.parse import urlparse
 
@@ -146,8 +146,8 @@ def _strip_class(title: str, subject: str | None) -> str:
     name = subject or title
     if not subject:
         name = re.sub(r"^[IVX]+[a-z]\s+", "", title)
-    name = name.replace("_", " ")
-    return name[:1].upper() + name[1:] if name else title
+    name = re.sub(r"\s+", " ", name.replace("_", " ")).strip()
+    return name[:1].upper() + name[1:] if name else title.strip()
 
 
 def parse_events(data: list[dict[str, Any]], tz: tzinfo) -> list[Lesson]:
@@ -309,6 +309,12 @@ def parse_grades(html: str) -> list[SubjectGrades]:
     return result
 
 
+def _add_week(moment: datetime, tz: tzinfo) -> datetime:
+    """+7 dni w czasie lokalnym (poprawnie przez zmianę czasu letni/zimowy)."""
+    naive = moment.replace(tzinfo=None) + timedelta(days=7)
+    return naive.replace(tzinfo=tz)
+
+
 # --------------------------------------------------------------------------
 # Klient
 # --------------------------------------------------------------------------
@@ -413,32 +419,55 @@ class ESzkolaClient:
     async def async_get_lessons(
         self, child_id: str, start: datetime, end: datetime
     ) -> list[Lesson]:
+        """Plan lekcji w zakresie [start, end).
+
+        Serwer zwraca plan tylko dla jednego tygodnia na zapytanie, dlatego
+        pytamy tydzień po tygodniu (pon. 00:00 – następny pon. 00:00), tak jak
+        robi to widok tygodnia w panelu.
+        """
+        start_l = start.astimezone(self._tz)
+        end_l = end.astimezone(self._tz)
+        monday = (start_l - timedelta(days=start_l.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        weeks: list[datetime] = []
+        while monday < end_l and len(weeks) < 60:
+            weeks.append(monday)
+            monday = _add_week(monday, self._tz)
+
+        found: dict[str, Lesson] = {}
         async with self._lock:
             # Ustawienie dziecka w sesji tak, jak robi to panel
             await self._get_page("/calendar", child_id)
-            body = {
-                "type": EVENT_TYPES,
-                "start": start.astimezone(self._tz).isoformat(timespec="seconds"),
-                "end": end.astimezone(self._tz).isoformat(timespec="seconds"),
-            }
-            headers = {
-                "X-Requested-With": "XMLHttpRequest",
-                "Accept": "application/json, text/javascript, */*; q=0.01",
-                "Referer": f"{self._base}/calendar",
-            }
-            text, path = await self._request(
-                "POST", "/calendar/events", data=body, headers=headers
-            )
-            try:
-                data = json.loads(text)
-            except ValueError as err:
-                self._logged_in = False
-                raise ESzkolaError(
-                    f"Plan lekcji nie zwrócił JSON (ścieżka {path}) – możliwe wygaśnięcie sesji"
-                ) from err
-            if not isinstance(data, list):
-                raise ESzkolaError("Nieoczekiwany format planu lekcji")
-            return parse_events(data, self._tz)
+            for week_start in weeks:
+                week_end = _add_week(week_start, self._tz)
+                for lesson in await self._fetch_week(week_start, week_end):
+                    if lesson.end > start_l and lesson.start < end_l:
+                        found[f"{lesson.uid}|{lesson.start.isoformat()}"] = lesson
+        return sorted(found.values(), key=lambda l: l.start)
+
+    async def _fetch_week(self, week_start: datetime, week_end: datetime) -> list[Lesson]:
+        body = {
+            "type": EVENT_TYPES,
+            "start": week_start.isoformat(timespec="seconds"),
+            "end": week_end.isoformat(timespec="seconds"),
+        }
+        headers = {
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Referer": f"{self._base}/calendar",
+        }
+        text, path = await self._request("POST", "/calendar/events", data=body, headers=headers)
+        try:
+            data = json.loads(text)
+        except ValueError as err:
+            self._logged_in = False
+            raise ESzkolaError(
+                f"Plan lekcji nie zwrócił JSON (ścieżka {path}) – możliwe wygaśnięcie sesji"
+            ) from err
+        if not isinstance(data, list):
+            raise ESzkolaError("Nieoczekiwany format planu lekcji")
+        return parse_events(data, self._tz)
 
     async def async_get_homework(self, child_id: str, max_pages: int = 3) -> list[Homework]:
         async with self._lock:

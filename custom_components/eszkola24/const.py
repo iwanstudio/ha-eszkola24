@@ -7,6 +7,7 @@ DOMAIN = "eszkola24"
 CONF_HOST = "host"
 CONF_EXCLUDE = "exclude_pattern"
 CONF_SCAN_HOURS = "scan_interval_hours"
+CONF_DAYS_OFF = "days_off_calendar"
 
 DEFAULT_HOST = "panel-spmorawica.eszkola24.pl"
 DEFAULT_EXCLUDE = "Świetlica"

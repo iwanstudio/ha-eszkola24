@@ -14,6 +14,8 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.selector import (
+    EntitySelector,
+    EntitySelectorConfig,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
@@ -22,6 +24,7 @@ from homeassistant.util import dt as dt_util
 
 from .api import ESzkolaAuthError, ESzkolaClient, ESzkolaError
 from .const import (
+    CONF_DAYS_OFF,
     CONF_EXCLUDE,
     CONF_HOST,
     CONF_SCAN_HOURS,
@@ -136,6 +139,9 @@ class ESzkolaOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_SCAN_HOURS, default=opts.get(CONF_SCAN_HOURS, DEFAULT_SCAN_HOURS)
                 ): vol.All(vol.Coerce(int), vol.Range(min=1, max=24)),
+                vol.Optional(
+                    CONF_DAYS_OFF, description={"suggested_value": opts.get(CONF_DAYS_OFF)}
+                ): EntitySelector(EntitySelectorConfig(domain="calendar")),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)

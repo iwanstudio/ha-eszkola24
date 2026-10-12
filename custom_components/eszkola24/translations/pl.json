@@ -35,7 +35,8 @@
         "title": "Ustawienia eSzkoła24",
         "data": {
           "exclude_pattern": "Pomijaj w kalendarzu zajęcia pasujące do (np. Świetlica)",
-          "scan_interval_hours": "Odświeżanie co ile godzin"
+          "scan_interval_hours": "Odświeżanie co ile godzin",
+          "days_off_calendar": "Kalendarz dni wolnych od szkoły (lekcje w te dni są pomijane)"
         }
       }
     }
