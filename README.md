@@ -6,9 +6,9 @@ Nieoficjalna integracja panelu rodzica [eSzkoła24](https://eszkola24.pl). Loguj
 |---|---|
 | `calendar.eszkola24_<imię>_plan_lekcji` | Prawdziwy plan lekcji z panelu, z oznaczeniem **zastępstw** i **sprawdzianów** |
 | `sensor.eszkola24_<imię>_prace_domowe` | Liczba nadchodzących prac domowych; w atrybutach lista (data, przedmiot, treść, nauczyciel) |
-| `sensor.eszkola24_<imię>_ostatnia_ocena` | Ostatnia ocena; w atrybutach przedmiot, opis (z czego), data i waga |
+| `sensor.eszkola24_<imię>_ostatnia_ocena` | Ostatnia ocena z przedmiotem i opisem, np. `5 – Język angielski: mail do kolegi (12.10)`; w atrybutach też waga |
 | `sensor.eszkola24_<imię>_oceny` | Średnia ze wszystkich przedmiotów; w atrybutach wszystkie oceny z opisami (per przedmiot) i lista 15 ostatnich |
-| `sensor.eszkola24_<imię>_najblizszy_sprawdzian` | Data najbliższego sprawdzianu; w atrybutach przedmiot, zakres i lista nadchodzących |
+| `sensor.eszkola24_<imię>_najblizszy_sprawdzian` | Najbliższy sprawdzian z zakresem, np. `Język polski – wt. 27.10: Praca klasowa…`; w atrybutach lista nadchodzących |
 
 Zakres sprawdzianu (zakładka Statystyki → Sprawdziany) trafia też do opisu właściwej lekcji w kalendarzu.
 

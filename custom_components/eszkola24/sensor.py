@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
@@ -15,6 +14,12 @@ from .api import Grade, pretty_subject
 from .entity import ESzkolaEntity
 
 RECENT_GRADES = 15
+DNI = ["pon.", "wt.", "śr.", "czw.", "pt.", "sob.", "niedz."]
+
+
+def _limit(text: str, size: int = 250) -> str:
+    """Stan encji w HA może mieć najwyżej 255 znaków."""
+    return text if len(text) <= size else text[: size - 1] + "…"
 
 
 async def async_setup_entry(
@@ -99,8 +104,16 @@ class LatestGradeSensor(ESzkolaEntity, SensorEntity):
 
     @property
     def native_value(self) -> str | None:
+        """Np. '5 – Język angielski: mail do kolegi (12.10)'."""
         g = self._latest()
-        return g.value if g else None
+        if not g:
+            return None
+        text = f"{g.value} – {pretty_subject(g.subject)}"
+        if g.description:
+            text += f": {g.description}"
+        if g.created:
+            text += f" ({g.created.strftime('%d.%m')})"
+        return _limit(text)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -149,7 +162,6 @@ class NextTestSensor(ESzkolaEntity, SensorEntity):
 
     _attr_name = "Najbliższy sprawdzian"
     _attr_icon = "mdi:file-document-edit-outline"
-    _attr_device_class = SensorDeviceClass.DATE
     _unrecorded_attributes = frozenset({"nadchodzace"})
 
     def _upcoming(self):
@@ -160,9 +172,17 @@ class NextTestSensor(ESzkolaEntity, SensorEntity):
         return [t for t in cd.tests if t.day and t.day >= today]
 
     @property
-    def native_value(self) -> date | None:
+    def native_value(self) -> str | None:
+        """Np. 'Język polski – wt. 27.10: Praca klasowa…' albo 'Brak zapowiedzianych'."""
+        if not self.child_data:
+            return None
         up = self._upcoming()
-        return up[0].day if up else None
+        if not up:
+            return "Brak zapowiedzianych"
+        t = up[0]
+        text = f"{pretty_subject(t.subject)} – {DNI[t.day.weekday()]} {t.day.strftime('%d.%m')}"
+        text += f": {t.topic}" if t.topic else " (zakres nie podany)"
+        return _limit(text)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -170,6 +190,7 @@ class NextTestSensor(ESzkolaEntity, SensorEntity):
         items = [
             {
                 "data": t.day.isoformat(),
+                "dzien": f"{DNI[t.day.weekday()]} {t.day.strftime('%d.%m')}",
                 "przedmiot": pretty_subject(t.subject),
                 "zakres": t.topic,
             }
@@ -177,5 +198,11 @@ class NextTestSensor(ESzkolaEntity, SensorEntity):
         ]
         attrs: dict[str, Any] = {"nadchodzace": items}
         if items:
-            attrs.update({"przedmiot": items[0]["przedmiot"], "zakres": items[0]["zakres"]})
+            attrs.update(
+                {
+                    "data": items[0]["data"],
+                    "przedmiot": items[0]["przedmiot"],
+                    "zakres": items[0]["zakres"],
+                }
+            )
         return attrs
