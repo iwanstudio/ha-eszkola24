@@ -1,0 +1,43 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "eSzkoła24",
+        "description": "Login details for the eSzkoła24 parent panel.",
+        "data": {
+          "host": "Panel address",
+          "username": "Login",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "eSzkoła24 re-authentication",
+        "description": "Enter the current password.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid login or password.",
+      "cannot_connect": "Cannot connect to eSzkoła24.",
+      "no_children": "Logged in, but no children were found.",
+      "unknown": "Unexpected error – see logs."
+    },
+    "abort": {
+      "already_configured": "Account already configured.",
+      "reauth_successful": "Re-authenticated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "eSzkoła24 options",
+        "data": {
+          "exclude_pattern": "Skip calendar entries matching (e.g. Świetlica)",
+          "scan_interval_hours": "Refresh every N hours"
+        }
+      }
+    }
+  }
+}

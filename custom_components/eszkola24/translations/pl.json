@@ -1,0 +1,43 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "eSzkoła24",
+        "description": "Dane logowania do panelu rodzica eSzkoła24.",
+        "data": {
+          "host": "Adres panelu",
+          "username": "Login",
+          "password": "Hasło"
+        }
+      },
+      "reauth_confirm": {
+        "title": "eSzkoła24 – ponowne logowanie",
+        "description": "Podaj aktualne hasło do panelu rodzica.",
+        "data": {
+          "password": "Hasło"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Niepoprawny login lub hasło.",
+      "cannot_connect": "Nie udało się połączyć z panelem eSzkoła24.",
+      "no_children": "Zalogowano, ale nie znaleziono żadnego dziecka na koncie.",
+      "unknown": "Nieoczekiwany błąd – szczegóły w logach."
+    },
+    "abort": {
+      "already_configured": "To konto jest już skonfigurowane.",
+      "reauth_successful": "Zalogowano ponownie."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Ustawienia eSzkoła24",
+        "data": {
+          "exclude_pattern": "Pomijaj w kalendarzu zajęcia pasujące do (np. Świetlica)",
+          "scan_interval_hours": "Odświeżanie co ile godzin"
+        }
+      }
+    }
+  }
+}
