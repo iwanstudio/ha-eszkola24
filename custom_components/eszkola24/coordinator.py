@@ -23,6 +23,8 @@ from .api import (
     Homework,
     Lesson,
     SubjectGrades,
+    Test,
+    subject_key,
 )
 from .const import (
     CAL_FUTURE,
@@ -35,6 +37,7 @@ from .const import (
     DOMAIN,
     EVENT_NEW_GRADE,
     EVENT_NEW_HOMEWORK,
+    EVENT_NEW_TEST,
     HOMEWORK_MAX_PAGES,
     STORAGE_VERSION,
 )
@@ -48,6 +51,7 @@ class ChildData:
     lessons: list[Lesson] = field(default_factory=list)
     homework: list[Homework] = field(default_factory=list)
     grades: list[SubjectGrades] = field(default_factory=list)
+    tests: list[Test] = field(default_factory=list)
 
     @property
     def all_grades(self) -> list[Grade]:
@@ -72,6 +76,7 @@ class ESzkolaCoordinator(DataUpdateCoordinator[dict[str, ChildData]]):
         self.client = client
         self._store: Store = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}")
         self._seen: dict[str, dict[str, list[str]]] | None = None
+        self._tests: dict[str, list[Test]] = {}
 
     @property
     def exclude_regex(self) -> re.Pattern | None:
@@ -131,10 +136,31 @@ class ESzkolaCoordinator(DataUpdateCoordinator[dict[str, ChildData]]):
                 d0 += timedelta(days=1)
         return days
 
+    @staticmethod
+    def annotate_tests(lessons: list[Lesson], tests: list[Test]) -> list[Lesson]:
+        """Dopisuje do lekcji zakres sprawdzianu z zakładki Sprawdziany."""
+        by_day: dict[tuple, Test] = {}
+        for t in tests:
+            if t.day:
+                by_day[(t.day, subject_key(t.subject))] = t
+        used: set[tuple] = set()
+        # przy kilku lekcjach tego samego przedmiotu jednego dnia zakres trafia do pierwszej
+        for lesson in sorted(lessons, key=lambda l: l.start):
+            for name in (lesson.subject, lesson.title):
+                k = (lesson.start.date(), subject_key(name))
+                t = by_day.get(k)
+                if t is not None and k not in used:
+                    used.add(k)
+                    lesson.has_test = True
+                    lesson.test_topic = t.topic or None
+                    break
+        return lessons
+
     async def async_fetch_lessons(self, child_id: str, start, end) -> list[Lesson]:
         """Pobranie planu dla dowolnego zakresu (używa kalendarz)."""
         lessons = await self.client.async_get_lessons(child_id, start, end)
-        return self.filter_lessons(lessons, await self.async_days_off(start, end))
+        lessons = self.filter_lessons(lessons, await self.async_days_off(start, end))
+        return self.annotate_tests(lessons, self._tests.get(child_id, []))
 
     async def _async_update_data(self) -> dict[str, ChildData]:
         if self._seen is None:
@@ -149,11 +175,18 @@ class ESzkolaCoordinator(DataUpdateCoordinator[dict[str, ChildData]]):
             result: dict[str, ChildData] = {}
             for child in self.client.children:
                 cid = child.child_id
+                try:
+                    self._tests[cid] = await self.client.async_get_tests(cid)
+                except ESzkolaAuthError:
+                    raise
+                except ESzkolaError as err:
+                    _LOGGER.warning("Nie udało się pobrać sprawdzianów: %s", err)
                 result[cid] = ChildData(
                     child=child,
                     lessons=await self.async_fetch_lessons(cid, start, end),
                     homework=await self.client.async_get_homework(cid, HOMEWORK_MAX_PAGES),
                     grades=await self.client.async_get_grades(cid),
+                    tests=self._tests.get(cid, []),
                 )
         except ESzkolaAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
@@ -171,12 +204,30 @@ class ESzkolaCoordinator(DataUpdateCoordinator[dict[str, ChildData]]):
             seen = self._seen.get(cid)
             grade_keys = [g.key for g in cd.all_grades]
             hw_ids = [h.hw_id for h in cd.homework]
+            test_keys = [t.key for t in cd.tests]
             if seen is None:
-                self._seen[cid] = {"grades": grade_keys, "homework": hw_ids}
+                self._seen[cid] = {"grades": grade_keys, "homework": hw_ids, "tests": test_keys}
                 changed = True
                 continue
+            if "tests" not in seen:
+                # aktualizacja z wersji bez sprawdzianów – nie ogłaszamy starych
+                seen["tests"] = test_keys
+                changed = True
             old_grades = set(seen.get("grades", []))
             old_hw = set(seen.get("homework", []))
+            old_tests = set(seen.get("tests", []))
+            for t in cd.tests:
+                if t.key not in old_tests:
+                    self.hass.bus.async_fire(
+                        EVENT_NEW_TEST,
+                        {
+                            "child_id": cid,
+                            "child": cd.child.first_name,
+                            "subject": t.subject,
+                            "topic": t.topic,
+                            "date": t.day.isoformat() if t.day else None,
+                        },
+                    )
             for g in cd.all_grades:
                 if g.key not in old_grades:
                     self.hass.bus.async_fire(
@@ -203,11 +254,12 @@ class ESzkolaCoordinator(DataUpdateCoordinator[dict[str, ChildData]]):
                             "date": h.day.isoformat() if h.day else None,
                         },
                     )
-            if set(grade_keys) != old_grades or set(hw_ids) != old_hw:
+            if set(grade_keys) - old_grades or set(hw_ids) - old_hw or set(test_keys) - old_tests:
                 # zachowujemy też stare klucze, żeby zniknięcie z listy (stronicowanie) nie powodowało powtórek
                 self._seen[cid] = {
                     "grades": sorted(old_grades | set(grade_keys)),
                     "homework": sorted(old_hw | set(hw_ids))[-500:],
+                    "tests": sorted(old_tests | set(test_keys))[-500:],
                 }
                 changed = True
         if changed:

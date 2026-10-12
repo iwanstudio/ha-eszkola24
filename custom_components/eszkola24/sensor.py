@@ -1,8 +1,8 @@
-"""Czujniki: prace domowe, oceny, najbliższy sprawdzian."""
+"""Czujniki: prace domowe, oceny, sprawdziany."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
@@ -11,7 +11,10 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from . import ESzkolaConfigEntry
+from .api import Grade, pretty_subject
 from .entity import ESzkolaEntity
+
+RECENT_GRADES = 15
 
 
 async def async_setup_entry(
@@ -31,12 +34,23 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
+def _grade_dict(g: Grade) -> dict[str, Any]:
+    return {
+        "ocena": g.value,
+        "przedmiot": pretty_subject(g.subject),
+        "opis": g.description,
+        "data": g.created.isoformat() if g.created else None,
+        "waga": g.weight,
+    }
+
+
 class HomeworkSensor(ESzkolaEntity, SensorEntity):
     """Stan: liczba prac domowych na dziś i kolejne dni."""
 
     _attr_name = "Prace domowe"
     _attr_icon = "mdi:bag-personal"
     _attr_native_unit_of_measurement = "szt."
+    _unrecorded_attributes = frozenset({"nadchodzace", "ostatnie"})
 
     def _upcoming(self):
         cd = self.child_data
@@ -73,6 +87,8 @@ class HomeworkSensor(ESzkolaEntity, SensorEntity):
 
 
 class LatestGradeSensor(ESzkolaEntity, SensorEntity):
+    """Stan: ostatnia ocena; atrybuty: z czego, kiedy, waga."""
+
     _attr_name = "Ostatnia ocena"
     _attr_icon = "mdi:star-circle"
 
@@ -89,21 +105,15 @@ class LatestGradeSensor(ESzkolaEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         g = self._latest()
-        if not g:
-            return {}
-        return {
-            "przedmiot": g.subject,
-            "opis": g.description,
-            "data": g.created.isoformat() if g.created else None,
-            "waga": g.weight,
-        }
+        return _grade_dict(g) if g else {}
 
 
 class GradesSensor(ESzkolaEntity, SensorEntity):
-    """Stan: średnia ze wszystkich przedmiotów; atrybuty: oceny per przedmiot."""
+    """Stan: średnia ze wszystkich przedmiotów; atrybuty: wszystkie oceny z opisami."""
 
     _attr_name = "Oceny"
     _attr_icon = "mdi:school-outline"
+    _unrecorded_attributes = frozenset({"przedmioty", "ostatnie"})
 
     @property
     def native_value(self) -> float | None:
@@ -120,39 +130,52 @@ class GradesSensor(ESzkolaEntity, SensorEntity):
             return {}
         return {
             "przedmioty": {
-                s.subject: {
+                pretty_subject(s.subject): {
                     "srednia": s.average,
-                    "oceny": [g.value for g in s.grades],
+                    "oceny": [_grade_dict(g) for g in s.grades],
                     "semestr": s.semester,
                     "proponowana": s.proposed,
                     "koncowa": s.final,
                 }
                 for s in cd.grades
             },
+            "ostatnie": [_grade_dict(g) for g in reversed(cd.all_grades[-RECENT_GRADES:])],
             "liczba_ocen": sum(len(s.grades) for s in cd.grades),
         }
 
 
 class NextTestSensor(ESzkolaEntity, SensorEntity):
-    """Najbliższa lekcja z zapowiedzianym sprawdzianem."""
+    """Najbliższy sprawdzian (z zakresem) i lista nadchodzących."""
 
     _attr_name = "Najbliższy sprawdzian"
     _attr_icon = "mdi:file-document-edit-outline"
-    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_device_class = SensorDeviceClass.DATE
+    _unrecorded_attributes = frozenset({"nadchodzace"})
 
-    def _next(self):
+    def _upcoming(self):
         cd = self.child_data
         if not cd:
-            return None
-        now = dt_util.now()
-        return next((l for l in cd.lessons if l.has_test and l.end > now), None)
+            return []
+        today = dt_util.now().date()
+        return [t for t in cd.tests if t.day and t.day >= today]
 
     @property
-    def native_value(self) -> datetime | None:
-        nxt = self._next()
-        return nxt.start if nxt else None
+    def native_value(self) -> date | None:
+        up = self._upcoming()
+        return up[0].day if up else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        nxt = self._next()
-        return {"przedmiot": nxt.subject, "sala": nxt.place} if nxt else {}
+        up = self._upcoming()
+        items = [
+            {
+                "data": t.day.isoformat(),
+                "przedmiot": pretty_subject(t.subject),
+                "zakres": t.topic,
+            }
+            for t in up
+        ]
+        attrs: dict[str, Any] = {"nadchodzace": items}
+        if items:
+            attrs.update({"przedmiot": items[0]["przedmiot"], "zakres": items[0]["zakres"]})
+        return attrs

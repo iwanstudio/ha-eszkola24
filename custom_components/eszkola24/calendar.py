@@ -45,7 +45,9 @@ def lesson_to_event(lesson: Lesson) -> CalendarEvent:
     if lesson.is_substitute:
         description_parts.append("Zastępstwo")
     if lesson.has_test:
-        description_parts.append("Zapowiedziany sprawdzian")
+        description_parts.append(
+            f"Sprawdzian: {lesson.test_topic}" if lesson.test_topic else "Zapowiedziany sprawdzian"
+        )
     return CalendarEvent(
         start=lesson.start,
         end=lesson.end,

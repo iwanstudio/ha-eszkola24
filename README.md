@@ -6,11 +6,13 @@ Nieoficjalna integracja panelu rodzica [eSzkoła24](https://eszkola24.pl). Loguj
 |---|---|
 | `calendar.eszkola24_<imię>_plan_lekcji` | Prawdziwy plan lekcji z panelu, z oznaczeniem **zastępstw** i **sprawdzianów** |
 | `sensor.eszkola24_<imię>_prace_domowe` | Liczba nadchodzących prac domowych; w atrybutach lista (data, przedmiot, treść, nauczyciel) |
-| `sensor.eszkola24_<imię>_ostatnia_ocena` | Ostatnia ocena; w atrybutach przedmiot, opis i data |
-| `sensor.eszkola24_<imię>_oceny` | Średnia ze wszystkich przedmiotów; w atrybutach oceny i średnie per przedmiot |
-| `sensor.eszkola24_<imię>_najblizszy_sprawdzian` | Termin najbliższej lekcji z zapowiedzianym sprawdzianem |
+| `sensor.eszkola24_<imię>_ostatnia_ocena` | Ostatnia ocena; w atrybutach przedmiot, opis (z czego), data i waga |
+| `sensor.eszkola24_<imię>_oceny` | Średnia ze wszystkich przedmiotów; w atrybutach wszystkie oceny z opisami (per przedmiot) i lista 15 ostatnich |
+| `sensor.eszkola24_<imię>_najblizszy_sprawdzian` | Data najbliższego sprawdzianu; w atrybutach przedmiot, zakres i lista nadchodzących |
 
-Dodatkowo integracja wysyła zdarzenia `eszkola24_new_grade` i `eszkola24_new_homework`, gdy pojawi się nowa ocena albo nowa praca domowa.
+Zakres sprawdzianu (zakładka Statystyki → Sprawdziany) trafia też do opisu właściwej lekcji w kalendarzu.
+
+Dodatkowo integracja wysyła zdarzenia `eszkola24_new_grade`, `eszkola24_new_homework` i `eszkola24_new_test`, gdy pojawi się nowa ocena, praca domowa albo sprawdzian.
 
 > Integracja nie jest związana z eSzkoła24. Korzysta z tych samych stron co panel w przeglądarce, więc zmiany po stronie serwisu mogą ją zepsuć.
 
@@ -29,6 +31,7 @@ W opcjach integracji (przycisk **Konfiguruj**):
 
 - **Pomijaj w kalendarzu zajęcia pasujące do** – domyślnie `Świetlica`. Można podać kilka słów jako wyrażenie regularne, np. `Świetlica|Koło`.
 - **Odświeżanie co ile godzin** – domyślnie 3.
+- **Kalendarz dni wolnych** – dowolny kalendarz HA (np. lokalny „Dni wolne od szkoły”); lekcje w dni, w które ma on wpis, są pomijane. Szkoła nie wykreśla świąt i ferii z planu.
 
 Hasło jest zapisywane wyłącznie w konfiguracji Twojego Home Assistanta. Jeśli je zmienisz w eSzkoła24, HA poprosi o ponowne zalogowanie.
 

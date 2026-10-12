@@ -55,6 +55,7 @@ class Lesson:
     has_test: bool
     is_substitute: bool
     kind: str
+    test_topic: str | None = None
 
 
 @dataclass
@@ -80,6 +81,34 @@ class Grade:
     def key(self) -> str:
         created = self.created.isoformat() if self.created else ""
         return f"{self.subject}|{self.value}|{self.description}|{created}"
+
+
+@dataclass
+class Test:
+    """Sprawdzian z zakładki Statystyki → Sprawdziany."""
+
+    day: date | None
+    subject: str
+    topic: str
+
+    @property
+    def key(self) -> str:
+        return f"{self.day.isoformat() if self.day else ''}|{self.subject}|{self.topic}"
+
+
+def subject_key(name: str) -> str:
+    """Klucz do porównywania nazw przedmiotów z różnych stron panelu."""
+    s = (name or "").lower().replace("_", " ")
+    s = re.sub(r"^[ivx]+[a-z]\s+", "", s)
+    s = re.sub(r"\s+\d[a-z]\s*gr\.?\s*\d+|\s*\(?gr\.?\s*\d+\)?|\s+ll\.\d+\.?", "", s)
+    s = s.replace("j.angielski", "język angielski").replace("j. angielski", "język angielski")
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def pretty_subject(name: str) -> str:
+    """'J.angielski_5b_gr.1' -> 'Język angielski', 'język polski' -> 'Język polski'."""
+    s = subject_key(name)
+    return s[:1].upper() + s[1:] if s else name
 
 
 @dataclass
@@ -309,6 +338,38 @@ def parse_grades(html: str) -> list[SubjectGrades]:
     return result
 
 
+def parse_tests(html: str) -> tuple[list[Test], int]:
+    """Tabela sprawdzianów: Data | Przedmiot | Temat / Zakres."""
+    soup = _soup(html)
+    tests: list[Test] = []
+    for t in soup.find_all("table"):
+        headers = [_text(th) for th in t.select("thead th")]
+        i_date = _header_index(headers, "data")
+        i_subj = _header_index(headers, "przedmiot")
+        i_topic = _header_index(headers, "temat", "zakres")
+        if i_date is None or i_subj is None:
+            continue
+        for row in t.select("tbody tr"):
+            cells = row.find_all("td")
+            if len(cells) <= max(i_date, i_subj):
+                continue
+            topic = _text(cells[i_topic]) if i_topic is not None and i_topic < len(cells) else ""
+            tests.append(
+                Test(
+                    day=_parse_pl_date(_text(cells[i_date])),
+                    subject=_text(cells[i_subj]),
+                    topic="" if topic == "-" else topic,
+                )
+            )
+        break
+    pages = 1
+    for a in soup.select("a[href*='page=']"):
+        m = re.search(r"[?&]page=(\d+)", a.get("href", ""))
+        if m:
+            pages = max(pages, int(m.group(1)))
+    return tests, pages
+
+
 def _add_week(moment: datetime, tz: tzinfo) -> datetime:
     """+7 dni w czasie lokalnym (poprawnie przez zmianę czasu letni/zimowy)."""
     naive = moment.replace(tzinfo=None) + timedelta(days=7)
@@ -479,6 +540,17 @@ class ESzkolaClient:
                 items.extend(more)
         unique = {hw.hw_id: hw for hw in items}
         return sorted(unique.values(), key=lambda h: h.day or date.min, reverse=True)
+
+    async def async_get_tests(self, child_id: str, max_pages: int = 3) -> list[Test]:
+        async with self._lock:
+            html = await self._get_page("/stats/test", child_id)
+            tests, pages = parse_tests(html)
+            for page in range(2, min(pages, max_pages) + 1):
+                html = await self._get_page(f"/stats/test?page={page}", child_id)
+                more, _ = parse_tests(html)
+                tests.extend(more)
+        unique = {t.key: t for t in tests}
+        return sorted(unique.values(), key=lambda t: t.day or date.min)
 
     async def async_get_grades(self, child_id: str) -> list[SubjectGrades]:
         async with self._lock:

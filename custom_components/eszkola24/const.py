@@ -21,5 +21,6 @@ HOMEWORK_MAX_PAGES = 3
 
 EVENT_NEW_GRADE = "eszkola24_new_grade"
 EVENT_NEW_HOMEWORK = "eszkola24_new_homework"
+EVENT_NEW_TEST = "eszkola24_new_test"
 
 STORAGE_VERSION = 1
